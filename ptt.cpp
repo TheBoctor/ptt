@@ -1,6 +1,7 @@
-// g++ -o ptt ptt.cpp -linput -ludev
-// also use -lxkbcommon if building with keyboard support.
-// alsu use -lSDL2main -lSDL2 -lSDL2_mixer if trying to play samples with SDL2.
+/*
+* Made using example source code from the Libinput and Rohrkabel projects.
+* All code referenced or reused is the sole work of its original authors.
+*/
 
 #include <thread>
 #include <atomic>
