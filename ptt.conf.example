@@ -1,0 +1,3 @@
+// Put your microphone's friendly name here. If you undefine this or leave it empty, the application will print a list.
+mic = "Built-in Audio";
+

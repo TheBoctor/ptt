@@ -27,6 +27,6 @@ include(FetchContent)
 FetchContent_Declare(rohrkabel GIT_REPOSITORY "https://github.com/Curve/rohrkabel" GIT_TAG v5.1)
 FetchContent_MakeAvailable(rohrkabel)
 
-target_link_libraries(${EXECUTABLE_NAME} cr::rohrkabel ${Libinput_LIBRARIES} ${UDev_LIBRARIES} ${SDL2_LIBRARIES} SDL2_mixer)
+target_link_libraries(${EXECUTABLE_NAME} cr::rohrkabel ${Libinput_LIBRARIES} ${UDev_LIBRARIES} ${SDL2_LIBRARIES} SDL2_mixer xkbcommon config++)
 
 add_definitions(-DSDL_MAIN_HANDLED)

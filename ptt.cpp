@@ -5,12 +5,12 @@
 
 #include <thread>
 #include <atomic>
-//#include <string>
+#include <string>
 #include <libinput.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <poll.h>
-//#include <xkbcommon/xkbcommon.h>
+#include <xkbcommon/xkbcommon.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -24,21 +24,22 @@
 #include <rohrkabel/registry/events.hpp>
 #include <rohrkabel/registry/registry.hpp>
 
+#include <libconfig.h++>
+
 namespace pw = pipewire;
+namespace cfg = libconfig;
 
 std::atomic<bool> thread_button_state = false, quit_application = false, thread_finished = false;
 
-#define DESIRED_MIC "Blue Snowball"
+std::string DESIRED_MIC = "";
 #define PTT_ON_SOUND "sounds/on.ogg"
 #define PTT_OFF_SOUND "sounds/off.ogg"
 constexpr bool VERBOSE_MODE = false;
 constexpr int PTT_SOUND_VOLUME = MIX_MAX_VOLUME / 2;
 
-/*
 static struct xkb_context *xkb_context;
 static struct xkb_keymap *keymap = NULL;
 static struct xkb_state *xkb_state = NULL;
-*/
 
 enum log_level
 {
@@ -56,11 +57,51 @@ void print_log(log_level lv, const char *fmt, ...)
 
 	if ( VERBOSE_MODE || (!VERBOSE_MODE && lv >= log_level::info) )
 	{
-		printf("DEBUG: ");
 		vprintf(fmt, args);
 	}
 
 	va_end(args);
+}
+
+
+bool load_config()
+{
+	/*
+	* Config params:
+	* mic	string, friendly name of mic from device description to match.
+	* key	TODO, keyboard key value, overrides mouse button detection if used.
+	*/
+
+	std::string xdg_config_dir(secure_getenv("HOME"));
+	xdg_config_dir += "/.config/ptt.conf";
+	cfg::Config my_cfg;
+
+	try
+  	{
+    	my_cfg.readFile(xdg_config_dir);
+  	}
+	catch (const cfg::FileIOException &e)
+	{
+		print_log(log_level::warn, "Failure opening config file \"%s\" for reading.\n", xdg_config_dir.c_str());
+		return false;
+	}
+	catch (const cfg::ParseException &e)
+	{
+		print_log(log_level::warn, "Failure parsing config file \"%s\"\n", xdg_config_dir.c_str());
+		return false;
+	}
+
+	try
+	{
+		std::string mic = my_cfg.lookup("mic");
+		DESIRED_MIC = mic;
+	}
+	catch (const cfg::SettingNotFoundException &e)
+	{
+		print_log(log_level::warn, "Couldn't find \"mic\" setting in config file.");
+	}
+
+	return true;
 }
 
 
@@ -79,25 +120,30 @@ static void process_event (struct libinput_event* event)
 			thread_button_state = libinput_event_pointer_get_button_state(pointer_event);
 		}
 	}
-	/*
-	else if (type == LIBINPUT_EVENT_KEYBOARD_KEY) {
+
+	else if (type == LIBINPUT_EVENT_KEYBOARD_KEY)
+	{
 		struct libinput_event_keyboard *keyboard_event = libinput_event_get_keyboard_event (event);
 		uint32_t key = libinput_event_keyboard_get_key (keyboard_event);
 		int state = libinput_event_keyboard_get_key_state (keyboard_event);
-		xkb_state_update_key (xkb_state, key+8, state);
-		if (state == LIBINPUT_KEY_STATE_PRESSED) {
+		xkb_state_update_key (xkb_state, key+8, (xkb_key_direction)state);
+		if (state == LIBINPUT_KEY_STATE_PRESSED)
+		{
 			uint32_t utf32 = xkb_state_key_get_utf32 (xkb_state, key+8);
-			if (utf32) {
-				if (utf32 >= 0x21 && utf32 <= 0x7E) {
-					//printf ("the key %c was pressed\n", (char)utf32);
+			if (utf32)
+			{
+				if (utf32 >= 0x21 && utf32 <= 0x7E)
+				{
+					print_log(log_level::info, "the key %c was pressed\n", (char)utf32);
 				}
-				else {
-					//printf ("the key U+%04X was pressed\n", utf32);
+				else
+				{
+					print_log(log_level::info, "the key U+%04X was pressed\n", utf32);
 				}
 			}
 		}
 	}
-	*/
+
 	libinput_event_destroy (event);
 }
 
@@ -138,16 +184,18 @@ void libinput_poll()
 		all_ok = false;
 	}
 
-	/*
 	xkb_context = xkb_context_new (XKB_CONTEXT_NO_FLAGS);
 	keymap = xkb_keymap_new_from_names (xkb_context, NULL, XKB_KEYMAP_COMPILE_NO_FLAGS);
-	if (!keymap) EXIT ("keymap error\n");
+	if (!keymap)
+	{
+		print_log(log_level::critical, "Xkb keymap error.\n");
+		all_ok = false;
+	}
 	xkb_state = xkb_state_new (keymap);
-	*/
 	
 	while (all_ok && !quit_application) {
 		struct pollfd fd = {libinput_get_fd(libinput), POLLIN, 0};
-		poll (&fd, 1, -1);
+		poll (&fd, 1, 1000);	// Timeout to avoid blocking if the user doesn't have permission for /dev/input
 		libinput_dispatch (libinput);
 		struct libinput_event *event;
 		while ((event = libinput_get_event(libinput))) {
@@ -164,7 +212,7 @@ void libinput_poll()
 		udev_unref (udev);
 	}
 
-	print_log(log_level::info, "Libinput thread finished.\n");
+	print_log(log_level::info, "Stopping input polling.\n");
 	thread_finished = true;
 }
 
@@ -264,6 +312,13 @@ int main ()
 	bool is_pressed = false, last_is_pressed = false;
 	signal (SIGINT, handle_quit_signal);
 
+	load_config();
+	if (DESIRED_MIC.empty())
+	{
+		print_log(log_level::info, "You have not chosen a mic in your config.\nDetected audio sources:\n");
+		quit_application = true;
+	}
+
 	auto main_loop = pw::main_loop::create();
     auto context   = pipewire::context::create(main_loop);
     auto core      = context->core();
@@ -290,10 +345,11 @@ int main ()
 
 		if (info.props.contains("device.description"))
         {
-			if (info.props.at("device.description") == DESIRED_MIC)
+			std::string& desc = info.props.at("device.description");
+			print_log(log_level::info, "  %s %s\n", desc.c_str(), (desc == DESIRED_MIC ? "<--" : ""));
+			if (desc == DESIRED_MIC)
 			{
 				devices.emplace_back(std::move(*device));
-				print_log(log_level::info, "Got desired device.\n");
 			}
 		}
     };
@@ -301,10 +357,16 @@ int main ()
 	listener.on<pipewire::registry_event::global>(on_global);
 	core->update();
 
+	if (!DESIRED_MIC.empty() && devices.empty())
+	{
+		print_log(log_level::critical, "Your desired mic, \"%s\", was not detected.\n", DESIRED_MIC.c_str());
+		quit_application = true;
+	}
+
 	auto libinput_loop = std::thread(libinput_poll);
 	libinput_loop.detach();
 
-	print_log(log_level::info, "Turning microphone OFF when starting main loop.\n");
+	print_log(log_level::verbose, "Turning microphone OFF when starting main loop.\n");
 	set_mute_all(devices, core, true);
 
 	while (!thread_finished)
@@ -333,7 +395,7 @@ int main ()
 		SDL_Delay(1);
 	}
 
-	print_log(log_level::info, "Turning microphone back ON before quitting.\n");
+	print_log(log_level::verbose, "Turning microphone back ON before quitting.\n");
 	set_mute_all(devices, core, false);
 
 	Mix_FreeChunk(ptt_on_sample);
