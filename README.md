@@ -11,7 +11,8 @@ Sound cues for mute toggle via SDL2 (SDL_mixer) are supported, though their path
 Roadmap:
 - [x] Config file/parser, standard XDG user .config dir
 - [x] Ability to list audio sources when the preferred one is unset or unavailable
-- [ ] Keyboard binding support
+- [x] Keyboard binding support
+- [ ] Keyboard binding support for chords, modifiers, or non-character-producing keys
 - [ ] Argument to show a "push a button" prompt, show the result and confirm, and write it to config
 
 Deps:
