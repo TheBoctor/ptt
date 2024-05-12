@@ -20,4 +20,4 @@ Deps:
 - Pipewire
 - SDL2
 - SDL_mixer
-- Rohrkabel (Modern C++ wrapper for Pipewire)
+- [Rohrkabel](https://github.com/Curve/rohrkabel) (Modern C++ wrapper for Pipewire)
