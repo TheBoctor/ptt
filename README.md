@@ -1,13 +1,16 @@
-Push-to-Talk Helper
+## Push-to-Talk Helper ##
 
-This is a small utility I cobbled together using sample source code from various projects, for personal use only. This is NOT commercial software.
+Small utility I cobbled together using sample source code from various projects, for personal use only. This is NOT commercial software. This allows using push-to-talk to control sources with buttons, so long as you add your user to the `input` group. XTEST/xdo is not used, there is no requirement for XWayland or any specific display server, and it should work on any distro with up-to-date packages.
 
-It toggles mute on a specified Pipewire source (Microphone) as with a conventional "push to talk" button, without caring what display protocols or clients are involved.
-Sound cues via SDL2 (SDL_mixer) are supported, the examples here mimic those used in popular VoIP program Discord, and are not my work.
+This will allow push-to-talk behavior even on things like the Discord web client or Vencord, no X11 required. Simply set the microphone to passive and set a relatively low activation threshold.
 
-Configuration is at compile time with static definitions, I have not yet chosen or implemented a config parser, but friendlier configuration is planned.
+Sound cues for mute toggle via SDL2 (SDL_mixer) are supported, though their paths are currently hardcoded.
 
-Keyboard support is not yet implemented, but is also planned.
+Roadmap:
+- [ ] Config file/parser, standard XDG user .config dir
+- [ ] Keyboard support
+- [ ] Argument to show a friendly list of sources and write chosen one to config
+- [ ] Argument to show a "push a button" prompt, show the result and confirm, and write it to config
 
 Deps:
 - Cmake
