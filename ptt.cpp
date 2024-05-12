@@ -3,6 +3,7 @@
 * All code referenced or reused is the sole work of its original authors.
 */
 
+#include <algorithm>
 #include <thread>
 #include <atomic>
 #include <string>
@@ -31,11 +32,12 @@ namespace cfg = libconfig;
 
 std::atomic<bool> thread_button_state = false, quit_application = false, thread_finished = false;
 
+constexpr bool VERBOSE_MODE = false;
 std::string DESIRED_MIC = "";
+char PTT_KEY_CHAR = '\0';
+int PTT_SOUND_VOLUME = MIX_MAX_VOLUME / 2;
 #define PTT_ON_SOUND "sounds/on.ogg"
 #define PTT_OFF_SOUND "sounds/off.ogg"
-constexpr bool VERBOSE_MODE = false;
-constexpr int PTT_SOUND_VOLUME = MIX_MAX_VOLUME / 2;
 
 static struct xkb_context *xkb_context;
 static struct xkb_keymap *keymap = NULL;
@@ -68,8 +70,9 @@ bool load_config()
 {
 	/*
 	* Config params:
-	* mic	string, friendly name of mic from device description to match.
-	* key	TODO, keyboard key value, overrides mouse button detection if used.
+	* mic		string, friendly name of mic from device description to match.
+	* key		string, one character, a character-producing key to activate PTT. Overrides mouse. Recommend '\'.
+	* volume	int, 0-128, controls volume of activation sounds. Default is 64 (50%).
 	*/
 
 	std::string xdg_config_dir(secure_getenv("HOME"));
@@ -101,6 +104,30 @@ bool load_config()
 		print_log(log_level::warn, "Couldn't find \"mic\" setting in config file.");
 	}
 
+	try
+	{
+		std::string btn = my_cfg.lookup("key");
+		if (btn.length() == 1)
+		{
+			PTT_KEY_CHAR = btn[0];
+			print_log(log_level::info, "Talk button bound to the %c key.\n", PTT_KEY_CHAR);
+		}
+	}
+	catch (const cfg::SettingNotFoundException &e)
+	{
+		print_log(log_level::info, "Keyboard \"key\" not set in config, press your mouse's side/extra buttons to talk.");
+	}
+
+	try
+	{
+		int desired_volume = my_cfg.lookup("volume");
+		PTT_SOUND_VOLUME = std::clamp(desired_volume, 0, MIX_MAX_VOLUME);
+	}
+	catch (const cfg::SettingNotFoundException &e)
+	{
+		print_log(log_level::verbose, "Using default volume level for push-to-talk sound effects. (%d)\n", PTT_SOUND_VOLUME);
+	}
+
 	return true;
 }
 
@@ -109,7 +136,37 @@ static void process_event (struct libinput_event* event)
 {
 	int type = libinput_event_get_type (event);
 
-	if (type == LIBINPUT_EVENT_POINTER_BUTTON)
+	if (PTT_KEY_CHAR != '\0')
+	{
+		if (type == LIBINPUT_EVENT_KEYBOARD_KEY)
+		{
+			struct libinput_event_keyboard *keyboard_event = libinput_event_get_keyboard_event (event);
+			uint32_t key = libinput_event_keyboard_get_key (keyboard_event);
+			int state = libinput_event_keyboard_get_key_state (keyboard_event);
+			xkb_state_update_key (xkb_state, key+8, (xkb_key_direction)state);
+
+			uint32_t utf32 = xkb_state_key_get_utf32 (xkb_state, key+8);
+			if (utf32)
+			{
+				if ((char)utf32 == PTT_KEY_CHAR)
+				{
+					thread_button_state = state;
+				}
+				/*
+				if (utf32 >= 0x21 && utf32 <= 0x7E)
+				{
+					print_log(log_level::info, "the key %c was pressed\n", (char)utf32);
+				}
+				
+				else
+				{
+					print_log(log_level::info, "the key U+%04X was pressed\n", utf32);
+				}
+				*/
+			}
+		}
+	}
+	else if (type == LIBINPUT_EVENT_POINTER_BUTTON)	// If no keyboard key is the talk key, prefer the mouse.
 	{
 		struct libinput_event_pointer* pointer_event = libinput_event_get_pointer_event (event);
 		uint32_t which_button = libinput_event_pointer_get_button(pointer_event);
@@ -118,29 +175,6 @@ static void process_event (struct libinput_event* event)
 		if (is_talk_button)
 		{
 			thread_button_state = libinput_event_pointer_get_button_state(pointer_event);
-		}
-	}
-
-	else if (type == LIBINPUT_EVENT_KEYBOARD_KEY)
-	{
-		struct libinput_event_keyboard *keyboard_event = libinput_event_get_keyboard_event (event);
-		uint32_t key = libinput_event_keyboard_get_key (keyboard_event);
-		int state = libinput_event_keyboard_get_key_state (keyboard_event);
-		xkb_state_update_key (xkb_state, key+8, (xkb_key_direction)state);
-		if (state == LIBINPUT_KEY_STATE_PRESSED)
-		{
-			uint32_t utf32 = xkb_state_key_get_utf32 (xkb_state, key+8);
-			if (utf32)
-			{
-				if (utf32 >= 0x21 && utf32 <= 0x7E)
-				{
-					print_log(log_level::info, "the key %c was pressed\n", (char)utf32);
-				}
-				else
-				{
-					print_log(log_level::info, "the key U+%04X was pressed\n", utf32);
-				}
-			}
 		}
 	}
 
@@ -297,6 +331,16 @@ int main ()
 		return 0;
 	}
 
+	bool is_pressed = false, last_is_pressed = false;
+	signal (SIGINT, handle_quit_signal);
+
+	load_config();
+	if (DESIRED_MIC.empty())
+	{
+		print_log(log_level::info, "You have not chosen a mic in your config.\nDetected audio sources:\n");
+		quit_application = true;
+	}
+
 	Mix_Chunk* ptt_on_sample = nullptr;
 	Mix_Chunk* ptt_off_sample = nullptr;
 
@@ -307,16 +351,6 @@ int main ()
 	{
 		Mix_VolumeChunk(ptt_on_sample, PTT_SOUND_VOLUME);
 		Mix_VolumeChunk(ptt_off_sample, PTT_SOUND_VOLUME);
-	}
-
-	bool is_pressed = false, last_is_pressed = false;
-	signal (SIGINT, handle_quit_signal);
-
-	load_config();
-	if (DESIRED_MIC.empty())
-	{
-		print_log(log_level::info, "You have not chosen a mic in your config.\nDetected audio sources:\n");
-		quit_application = true;
 	}
 
 	auto main_loop = pw::main_loop::create();

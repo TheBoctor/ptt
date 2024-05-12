@@ -1,3 +1,11 @@
-// Put your microphone's friendly name here. If you undefine this or leave it empty, the application will print a list.
-mic = "Built-in Audio";
+// Put your microphone's friendly name here.
+// Audio mixers usually display these, but if unsure, the application will also print a list on startup.
+mic = "Blue Snowball";
+
+// A single-character hotkey (not mods) to replace the side/extra mouse button default bind.
+// By default, this is not used. Backslash is recommended, but must be properly escaped.
+//key = "\\";
+
+// Value 0-128, controls volume of activation sounds. Default is 64 (50%).
+//volume = 64;
 
