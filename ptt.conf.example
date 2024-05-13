@@ -2,10 +2,8 @@
 // Audio mixers usually display these, but if unsure, the application will also print a list on startup.
 mic = "Blue Snowball";
 
-// A single-character hotkey (not mods) to replace the side/extra mouse button default bind.
-// By default, this is not used. Backslash is recommended, but must be properly escaped.
-//key = "\\";
+// A hotkey (refer to list of XKB names) to replace/override the side/extra mouse button default bind.
+//key = "backslash";
 
 // Value 0-128, controls volume of activation sounds. Default is 64 (50%).
 //volume = 64;
-
