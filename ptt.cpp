@@ -115,13 +115,17 @@ bool load_config()
 			PTT_KEY_SYM = XStringToKeysym(btn.c_str());
 			if (PTT_KEY_SYM != NoSymbol)
 			{
-				print_log(log_level::info, "Talk button bound to the %s key.\n", btn.c_str());
+				print_log(log_level::info, "Hold the %s key to talk.\n", btn.c_str());
+			}
+			else
+			{
+				print_log(log_level::info, "Invalid keybind \"%s\" specified in config file.\nHold your mouse's side button to talk.\n", btn.c_str());
 			}
 		}
 	}
 	catch (const cfg::SettingNotFoundException &e)
 	{
-		print_log(log_level::info, "Keyboard \"key\" not set in config, press your mouse's side/extra buttons to talk.");
+		print_log(log_level::info, "Hold your mouse's side button to talk.\n");
 	}
 
 	try
@@ -373,7 +377,7 @@ int main ()
 		if (info.props.contains("device.description"))
         {
 			std::string& desc = info.props.at("device.description");
-			print_log(log_level::info, "  %s %s\n", desc.c_str(), (desc == DESIRED_MIC ? "<--" : ""));
+			print_log(log_level::info, "  %s %s\n", (desc == DESIRED_MIC ? "--> " : "    "), desc.c_str());
 			if (desc == DESIRED_MIC)
 			{
 				devices.emplace_back(std::move(*device));
