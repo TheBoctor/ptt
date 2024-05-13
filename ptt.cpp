@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <poll.h>
 #include <xkbcommon/xkbcommon.h>
+#include <X11/Xlib.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -30,11 +31,13 @@
 namespace pw = pipewire;
 namespace cfg = libconfig;
 
-std::atomic<bool> thread_button_state = false, quit_application = false, thread_finished = false;
+std::atomic<bool> thread_button_state = false,
+					quit_application = false,
+					thread_finished = false;
 
 constexpr bool VERBOSE_MODE = false;
 std::string DESIRED_MIC = "";
-char PTT_KEY_CHAR = '\0';
+KeySym PTT_KEY_SYM = NoSymbol;
 int PTT_SOUND_VOLUME = MIX_MAX_VOLUME / 2;
 #define PTT_ON_SOUND "sounds/on.ogg"
 #define PTT_OFF_SOUND "sounds/off.ogg"
@@ -107,10 +110,13 @@ bool load_config()
 	try
 	{
 		std::string btn = my_cfg.lookup("key");
-		if (btn.length() == 1)
+		if (!btn.empty())
 		{
-			PTT_KEY_CHAR = btn[0];
-			print_log(log_level::info, "Talk button bound to the %c key.\n", PTT_KEY_CHAR);
+			PTT_KEY_SYM = XStringToKeysym(btn.c_str());
+			if (PTT_KEY_SYM != NoSymbol)
+			{
+				print_log(log_level::info, "Talk button bound to the %s key.\n", btn.c_str());
+			}
 		}
 	}
 	catch (const cfg::SettingNotFoundException &e)
@@ -136,7 +142,7 @@ static void process_event (struct libinput_event* event)
 {
 	int type = libinput_event_get_type (event);
 
-	if (PTT_KEY_CHAR != '\0')
+	if (PTT_KEY_SYM != NoSymbol)
 	{
 		if (type == LIBINPUT_EVENT_KEYBOARD_KEY)
 		{
@@ -144,25 +150,12 @@ static void process_event (struct libinput_event* event)
 			uint32_t key = libinput_event_keyboard_get_key (keyboard_event);
 			int state = libinput_event_keyboard_get_key_state (keyboard_event);
 			xkb_state_update_key (xkb_state, key+8, (xkb_key_direction)state);
+			KeySym sym = xkb_state_key_get_one_sym(xkb_state, key+8);
+			//printf("%s\n", XKeysymToString(test));
 
-			uint32_t utf32 = xkb_state_key_get_utf32 (xkb_state, key+8);
-			if (utf32)
+			if (PTT_KEY_SYM == sym)
 			{
-				if ((char)utf32 == PTT_KEY_CHAR)
-				{
-					thread_button_state = state;
-				}
-				/*
-				if (utf32 >= 0x21 && utf32 <= 0x7E)
-				{
-					print_log(log_level::info, "the key %c was pressed\n", (char)utf32);
-				}
-				
-				else
-				{
-					print_log(log_level::info, "the key U+%04X was pressed\n", utf32);
-				}
-				*/
+				thread_button_state = state;
 			}
 		}
 	}
