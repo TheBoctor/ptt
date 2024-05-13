@@ -1,6 +1,6 @@
 /*
 * Made using example source code from the Libinput and Rohrkabel projects.
-* All code referenced or reused is the sole work of its original authors.
+* All code directly referenced or reused is the work of its original authors.
 */
 
 #include <algorithm>
@@ -71,13 +71,7 @@ void print_log(log_level lv, const char *fmt, ...)
 
 bool load_config()
 {
-	/*
-	* Config params:
-	* mic		string, friendly name of mic from device description to match.
-	* key		string, one character, a character-producing key to activate PTT. Overrides mouse. Recommend '\'.
-	* volume	int, 0-128, controls volume of activation sounds. Default is 64 (50%).
-	*/
-
+	// See ptt.conf.example for a list of parameters.
 	std::string xdg_config_dir(secure_getenv("HOME"));
 	xdg_config_dir += "/.config/ptt.conf";
 	cfg::Config my_cfg;
@@ -146,6 +140,7 @@ static void process_event (struct libinput_event* event)
 {
 	int type = libinput_event_get_type (event);
 
+	// Ignore the mouse buttons if the user defined their own talk key.
 	if (PTT_KEY_SYM != NoSymbol)
 	{
 		if (type == LIBINPUT_EVENT_KEYBOARD_KEY)
@@ -155,7 +150,6 @@ static void process_event (struct libinput_event* event)
 			int state = libinput_event_keyboard_get_key_state (keyboard_event);
 			xkb_state_update_key (xkb_state, key+8, (xkb_key_direction)state);
 			KeySym sym = xkb_state_key_get_one_sym(xkb_state, key+8);
-			//printf("%s\n", XKeysymToString(test));
 
 			if (PTT_KEY_SYM == sym)
 			{
@@ -163,7 +157,7 @@ static void process_event (struct libinput_event* event)
 			}
 		}
 	}
-	else if (type == LIBINPUT_EVENT_POINTER_BUTTON)	// If no keyboard key is the talk key, prefer the mouse.
+	else if (type == LIBINPUT_EVENT_POINTER_BUTTON)
 	{
 		struct libinput_event_pointer* pointer_event = libinput_event_get_pointer_event (event);
 		uint32_t which_button = libinput_event_pointer_get_button(pointer_event);
