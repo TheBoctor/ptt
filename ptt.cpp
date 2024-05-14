@@ -58,9 +58,9 @@ enum log_level
 void print_log(log_level lv, const char *fmt, ...)
 {
 	va_list args;
-    va_start(args, fmt);
+	va_start(args, fmt);
 
-	if ( VERBOSE_MODE || (!VERBOSE_MODE && lv >= log_level::info) )
+	if ( VERBOSE_MODE || lv >= log_level::info )
 	{
 		vprintf(fmt, args);
 	}
@@ -72,13 +72,13 @@ void print_log(log_level lv, const char *fmt, ...)
 bool load_config()
 {
 	// See ptt.conf.example for a list of parameters.
-	std::string xdg_config_dir(secure_getenv("HOME"));
+	std::string xdg_config_dir = secure_getenv("HOME");
 	xdg_config_dir += "/.config/ptt.conf";
 	cfg::Config my_cfg;
 
 	try
   	{
-    	my_cfg.readFile(xdg_config_dir);
+		my_cfg.readFile(xdg_config_dir);
   	}
 	catch (const cfg::FileIOException &e)
 	{
@@ -218,12 +218,14 @@ void libinput_poll()
 	}
 	xkb_state = xkb_state_new (keymap);
 	
-	while (all_ok && !quit_application) {
-		struct pollfd fd = {libinput_get_fd(libinput), POLLIN, 0};
+	while (all_ok && !quit_application)
+	{
+		struct pollfd fd = { libinput_get_fd(libinput), POLLIN, 0 };
 		poll (&fd, 1, 1000);	// Timeout to avoid blocking if the user doesn't have permission for /dev/input
 		libinput_dispatch (libinput);
 		struct libinput_event *event;
-		while ((event = libinput_get_event(libinput))) {
+		while ((event = libinput_get_event(libinput)))
+		{
 			process_event (event);
 		}
 	}
@@ -252,14 +254,13 @@ void handle_quit_signal(sig_atomic_t s)
 auto try_get_mute_prop(const pw::spa::pod &pod)
 {
 	// NOLINTNEXTLINE
-	auto impl = [](const pw::spa::pod_prop *parent, const pw::spa::pod &pod,
-					auto &self) -> std::optional<pw::spa::pod_prop> {
+	auto impl = [](const pw::spa::pod_prop *parent, const pw::spa::pod &pod, auto &self) -> std::optional<pw::spa::pod_prop>
+	{
 		if (pod.type() == pw::spa::pod_type::object)
 		{
 			for (const auto &item : pod.body<pw::spa::pod_object_body>())
 			{
 				auto rtn = self(&item, item.value(), self);
-
 				if (!rtn.has_value())
 				{
 					continue;
@@ -289,13 +290,13 @@ void set_mute_all(std::vector<pw::device>& devs, std::shared_ptr<pipewire::core>
 	}
 
 	for ( auto& dev : devs )
-    {
+	{
 		auto dev_name = dev.info().props.at("device.description");
 		auto params = dev.params();
 		core->update();
 
 		for (const auto &[pod_id, pod] : params.get())
-    	{
+		{
 			auto mute_prop = try_get_mute_prop(pod);
 			if (mute_prop)
 			{
@@ -345,31 +346,32 @@ int main ()
 	}
 
 	auto main_loop = pw::main_loop::create();
-    auto context   = pipewire::context::create(main_loop);
-    auto core      = context->core();
-    auto reg       = core->registry();
+	auto context   = pipewire::context::create(main_loop);
+	auto core      = context->core();
+	auto reg       = core->registry();
 
 	std::vector<pw::device> devices;
 
 	auto listener = reg->listen();
 
-    auto on_global = [&](const pipewire::global &global) {
-        if (global.type != pipewire::device::type)
-        {
-            return;
-        }
+	auto on_global = [&](const pipewire::global &global)
+	{
+		if (global.type != pipewire::device::type)
+		{
+			return;
+		}
 
-        auto device = reg->bind<pipewire::device>(global.id).get();
-        auto info   = device->info();
+		auto device = reg->bind<pipewire::device>(global.id).get();
+		auto info   = device->info();
 		auto params  = device->params();
 
-        if (info.props["media.class"] != "Audio/Device")
-        {
-            return;
-        }
+		if (info.props["media.class"] != "Audio/Device")
+		{
+			return;
+		}
 
 		if (info.props.contains("device.description"))
-        {
+		{
 			std::string& desc = info.props.at("device.description");
 			print_log(log_level::info, "  %s %s\n", (desc == DESIRED_MIC ? "--> " : "    "), desc.c_str());
 			if (desc == DESIRED_MIC)
@@ -377,7 +379,7 @@ int main ()
 				devices.emplace_back(std::move(*device));
 			}
 		}
-    };
+	};
 
 	listener.on<pipewire::registry_event::global>(on_global);
 	core->update();
