@@ -6,4 +6,4 @@ mic = "Blue Snowball";
 //key = "backslash";
 
 // Value 0-128, controls volume of activation sounds. Default is 64 (50%).
-//volume = 64;
+//volume = 48;
