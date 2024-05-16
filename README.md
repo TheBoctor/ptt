@@ -4,7 +4,7 @@ Small utility I cobbled together using sample source code from various projects,
 
 This utility allows using push-to-talk to control sources via libinput events, **so long as you add your user to the `input` group**. XTEST/xdo is not used, there is no requirement for XWayland or any specific display server. Xlib is only used to resolve human-readable hotkey names.
 
-This will allow push-to-talk behavior even on things like the Discord web client or Vencord, no XTEST or XWayland shims required. Simply set your application's mic policy to passive/auto and set a relatively low activation threshold.
+This will allow push-to-talk behavior even on things like the Discord web client or Vencord, no XTEST or XWayland shims required. Simply set your application's mic policy to passive/auto and set a relatively low activation threshold. **In Discord web clients, you may want to disable "Automatic Gain Control" entirely. It can detect your mic turning on and off as peaks, and lower its level, potentially making it hard for others to hear you.**
 
 Sound cues for mute toggle via SDL2 (SDL_mixer) are supported, though their paths are currently hardcoded.
 
