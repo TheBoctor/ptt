@@ -38,7 +38,7 @@ std::atomic<bool> thread_button_state = false,
 constexpr bool VERBOSE_MODE = false;
 std::string DESIRED_MIC = "";
 KeySym PTT_KEY_SYM = NoSymbol;
-int PTT_SOUND_VOLUME = MIX_MAX_VOLUME / 2;
+int PTT_SOUND_VOLUME = 48;
 #define PTT_ON_SOUND "sounds/on.ogg"
 #define PTT_OFF_SOUND "sounds/off.ogg"
 
