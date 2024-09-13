@@ -17,7 +17,7 @@ Roadmap:
 
 Deps:
 - Cmake
-- Udev
+- Udev (in `systemd-devel` on Red Hat distros)
 - Libinput
 - Xlib
 - Xkbcommon
