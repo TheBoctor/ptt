@@ -55,6 +55,7 @@ enum log_level
 };
 
 
+// TODO: Make a much, much safer version of this.
 void print_log(log_level lv, const char *fmt, ...)
 {
 	va_list args;
@@ -66,6 +67,13 @@ void print_log(log_level lv, const char *fmt, ...)
 	}
 
 	va_end(args);
+}
+
+
+// Ergonomics: In case you keep many shells open at once on your desktop.
+void set_term_title(const std::string& title)
+{
+	printf("\033]0;%s\007", title.c_str());
 }
 
 
@@ -312,6 +320,8 @@ void set_mute_all(std::vector<pw::device>& devs, std::shared_ptr<pipewire::core>
 
 int main ()
 {
+	set_term_title("Push to Talk");
+
 	if ( SDL_Init(SDL_INIT_AUDIO) == -1 )
 	{
 		print_log(log_level::critical, "Failed to init SDL2.\n");
