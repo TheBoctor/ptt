@@ -1,9 +1,17 @@
-// Put your microphone's friendly name here.
-// Audio mixers usually display these, but if unsure, the application will also print a list on startup.
+// Put the desired microphone's friendly name here.
+// Audio mixers usually display these, but if unsure, the ptt application will show a list on startup.
 mic = "Blue Snowball";
 
-// A hotkey (refer to list of XKB names) to replace/override the side/extra mouse button default bind.
+// A hotkey (refer to list of XKB names) which will toggle this mic on when pressed, and off when released.
+// Some favorites are included here. I personally recommend unbinding PrtSc on your compositor and using
+// that, if using a ThinkPad with the modern keyboard, since its bottom-row position feels comfortable.
 //key = "backslash";
+key = "Print";
+
+// Valid settings here include KEYBOARD, MOUSE, and BOTH (default). If you have a side mouse button but do
+// not want it to toggle the mic, simply change this to KEYBOARD. If you have defined a key but have plugged
+// in a USB mouse at your workstation and would rather only use the mouse, conversely change this to MOUSE.
+keyboard_or_mouse="BOTH";
 
 // Value 0-128, controls volume of activation sounds. Default is 64 (50%).
 //volume = 48;
