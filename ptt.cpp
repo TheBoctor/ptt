@@ -1,12 +1,15 @@
 /*
 * Made using example source code from the Libinput and Rohrkabel projects.
-* All code directly referenced or reused is the work of its original authors.
+* Any code directly referenced or reused is the work of its original authors.
 */
 
 #include <algorithm>
+#include <cctype>
+#include <string_view>
 #include <thread>
 #include <atomic>
 #include <string>
+#include <unordered_map>
 #include <libinput.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -31,11 +34,32 @@
 namespace pw = pipewire;
 namespace cfg = libconfig;
 
+enum class InputType {
+	MOUSE_ONLY,
+	KEYBOARD_ONLY,
+	MOUSE_AND_KEYBOARD
+};
+
+std::unordered_map<std::string, InputType> input_type_lookup =
+{
+	{ "MOUSE_ONLY", InputType::MOUSE_ONLY },
+	{ "MOUSE", InputType::MOUSE_ONLY },
+
+	{ "KEYBOARD_ONLY", InputType::KEYBOARD_ONLY },
+	{ "KEYBOARD", InputType::KEYBOARD_ONLY },
+
+	{ "KEYBOARD_AND_MOUSE", InputType::MOUSE_AND_KEYBOARD },
+	{ "MOUSE_AND_KEYBOARD", InputType::MOUSE_AND_KEYBOARD },
+	{ "BOTH", InputType::MOUSE_AND_KEYBOARD }
+};
+
 std::atomic<bool> thread_button_state = false,
 					quit_application = false,
 					thread_finished = false;
 
+
 constexpr bool VERBOSE_MODE = false;
+InputType DESIRED_EVENT_TYPE = InputType::MOUSE_AND_KEYBOARD;
 std::string DESIRED_MIC = "";
 KeySym PTT_KEY_SYM = NoSymbol;
 int PTT_SOUND_VOLUME = 48;
@@ -77,6 +101,18 @@ void set_term_title(const std::string& title)
 }
 
 
+bool ichar_equals(char a, char b)
+{
+	return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
+}
+
+
+bool iequals(std::string_view lhs, std::string_view rhs)
+{
+	return std::ranges::equal(lhs, rhs, ichar_equals);
+}
+
+
 bool load_config()
 {
 	// See ptt.conf.example for a list of parameters.
@@ -111,23 +147,46 @@ bool load_config()
 
 	try
 	{
+		std::string listen_for_type = my_cfg.lookup("keyboard_or_mouse");
+
+		if ( auto find = input_type_lookup.find(listen_for_type); find != input_type_lookup.end() )
+		{
+			DESIRED_EVENT_TYPE = find->second;
+			print_log(log_level::info, "Listening for events with filter: %s.\n", listen_for_type.c_str());
+		}
+	}
+	catch (const cfg::SettingNotFoundException &e)
+	{
+		print_log(log_level::verbose, "No filter specified for exclusive keyboard and/or mouse listening. Defaulting to \"BOTH\".\n");
+		print_log(log_level::info, "If you want to only listen for keyboard or mouse events individually, specify \"keyboard_or_mouse\" in ptt.conf. Valid settings include \"KEYBOARD_ONLY\", \"MOUSE_ONLY\", or \"BOTH\"\n");
+	}
+
+	try
+	{
 		std::string btn = my_cfg.lookup("key");
-		if (!btn.empty())
+		if (!btn.empty() && DESIRED_EVENT_TYPE != InputType::MOUSE_ONLY)
 		{
 			PTT_KEY_SYM = XStringToKeysym(btn.c_str());
 			if (PTT_KEY_SYM != NoSymbol)
 			{
-				print_log(log_level::info, "Hold the %s key to talk.\n", btn.c_str());
+				std::string keyboard_help_msg = ".";
+				if (DESIRED_EVENT_TYPE == InputType::MOUSE_AND_KEYBOARD)
+				{
+					keyboard_help_msg = ", or hold your mouse's side button.";
+				}
+				print_log(log_level::info, "Hold the %s key to talk%s\n", btn.c_str(), keyboard_help_msg.c_str());
 			}
 			else
 			{
 				print_log(log_level::info, "Invalid keybind \"%s\" specified in config file.\nHold your mouse's side button to talk.\n", btn.c_str());
+				DESIRED_EVENT_TYPE = InputType::MOUSE_ONLY;
 			}
 		}
 	}
 	catch (const cfg::SettingNotFoundException &e)
 	{
-		print_log(log_level::info, "Hold your mouse's side button to talk.\n");
+		DESIRED_EVENT_TYPE = InputType::MOUSE_ONLY;
+		print_log(log_level::info, "No \"key\" setting specified in ptt.conf. Hold your mouse's side button to talk.\n");
 	}
 
 	try
@@ -148,24 +207,21 @@ static void process_event (struct libinput_event* event)
 {
 	int type = libinput_event_get_type (event);
 
-	// Ignore the mouse buttons if the user defined their own talk key.
-	if (PTT_KEY_SYM != NoSymbol)
+	if ( (DESIRED_EVENT_TYPE != InputType::MOUSE_ONLY) && (type == LIBINPUT_EVENT_KEYBOARD_KEY) )
 	{
-		if (type == LIBINPUT_EVENT_KEYBOARD_KEY)
-		{
-			struct libinput_event_keyboard *keyboard_event = libinput_event_get_keyboard_event (event);
-			uint32_t key = libinput_event_keyboard_get_key (keyboard_event);
-			int state = libinput_event_keyboard_get_key_state (keyboard_event);
-			xkb_state_update_key (xkb_state, key+8, (xkb_key_direction)state);
-			KeySym sym = xkb_state_key_get_one_sym(xkb_state, key+8);
+		struct libinput_event_keyboard *keyboard_event = libinput_event_get_keyboard_event (event);
+		uint32_t key = libinput_event_keyboard_get_key (keyboard_event);
+		int state = libinput_event_keyboard_get_key_state (keyboard_event);
+		xkb_state_update_key (xkb_state, key+8, (xkb_key_direction)state);
+		KeySym sym = xkb_state_key_get_one_sym(xkb_state, key+8);
 
-			if (PTT_KEY_SYM == sym)
-			{
-				thread_button_state = state;
-			}
+		if (PTT_KEY_SYM == sym)
+		{
+			thread_button_state = state;
 		}
 	}
-	else if (type == LIBINPUT_EVENT_POINTER_BUTTON)
+
+	if ( (DESIRED_EVENT_TYPE != InputType::KEYBOARD_ONLY) && (type == LIBINPUT_EVENT_POINTER_BUTTON) )
 	{
 		struct libinput_event_pointer* pointer_event = libinput_event_get_pointer_event (event);
 		uint32_t which_button = libinput_event_pointer_get_button(pointer_event);
@@ -197,6 +253,7 @@ void libinput_poll()
 {
 	bool all_ok = true;
 	static struct libinput_interface interface = {&open_restricted, &close_restricted};
+	static uint32_t last_button_pressed = 0;
 
 	struct udev* udev = udev_new ();
 	if (!udev)
