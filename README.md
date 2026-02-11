@@ -1,6 +1,6 @@
 ## Push-to-Talk Helper ##
 
-Note: I am no longer actively using this unless something happens to KDE Plasma. Plasma 6.7 introduces a global Push To Talk shortcut that works better for my purposes, and this diff is easy to backport as a patch to 6.5 and 6.6. I recommend anyone on Plasma do this instead.
+Note: KDE Plasma 6.7 introduces a global Push-to-Talk shortcut that may work better for your purposes. The plasma-pa diff is easy to backport as a patch to 6.5 and 6.6. I recommend anyone on Plasma do this instead, unless you have specific need for only using PTT on **one specific microphone**. I do have a multi-mic setup and unfortunately this means I need to keep using my hack instead of their feature.
 
 Small utility I cobbled together using sample source code from various projects, designed to suit my personal preferences and use case. This is NOT production software for the general public, but may be useful to others.
 
