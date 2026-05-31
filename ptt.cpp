@@ -21,9 +21,6 @@
 #include <stdio.h>
 #include <linux/input.h>
 
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_mixer.h>
-
 #include <rohrkabel/device/device.hpp>
 #include <rohrkabel/spa/pod/object/body.hpp>
 #include <rohrkabel/registry/events.hpp>
@@ -62,9 +59,6 @@ constexpr bool VERBOSE_MODE = false;
 InputType DESIRED_EVENT_TYPE = InputType::MOUSE_AND_KEYBOARD;
 std::string DESIRED_MIC = "";
 KeySym PTT_KEY_SYM = NoSymbol;
-int PTT_SOUND_VOLUME = 48;
-#define PTT_ON_SOUND "sounds/on.ogg"
-#define PTT_OFF_SOUND "sounds/off.ogg"
 
 static struct xkb_context *xkb_context;
 static struct xkb_keymap *keymap = NULL;
@@ -188,17 +182,6 @@ bool load_config()
 		DESIRED_EVENT_TYPE = InputType::MOUSE_ONLY;
 		print_log(log_level::info, "No \"key\" setting specified in ptt.conf. Hold your mouse's side button to talk.\n");
 	}
-
-	try
-	{
-		int desired_volume = my_cfg.lookup("volume");
-		PTT_SOUND_VOLUME = std::clamp(desired_volume, 0, MIX_MAX_VOLUME);
-	}
-	catch (const cfg::SettingNotFoundException &e)
-	{
-		print_log(log_level::verbose, "Using default volume level for push-to-talk sound effects. (%d)\n", PTT_SOUND_VOLUME);
-	}
-
 	return true;
 }
 
@@ -225,7 +208,8 @@ static void process_event (struct libinput_event* event)
 	{
 		struct libinput_event_pointer* pointer_event = libinput_event_get_pointer_event (event);
 		uint32_t which_button = libinput_event_pointer_get_button(pointer_event);
-		bool is_talk_button = (which_button == BTN_SIDE || which_button == BTN_EXTRA);
+		bool is_talk_button = (which_button == BTN_SIDE || which_button == BTN_EXTRA	// Side buttons on a normal mouse, which are the actual M4/M5 back and forward browser buttons.
+		|| which_button == BTN_FORWARD || which_button == BTN_BACK || which_button == BTN_TASK); // These actually correspond to the further mouse buttons on the Elecom HUGE and Deft Pro trackmice.
 		
 		if (is_talk_button)
 		{
@@ -379,17 +363,6 @@ int main ()
 {
 	set_term_title("Push to Talk");
 
-	if ( SDL_Init(SDL_INIT_AUDIO) == -1 )
-	{
-		print_log(log_level::critical, "Failed to init SDL2.\n");
-		return 0;
-	}
-	if ( Mix_OpenAudio( 44100, MIX_DEFAULT_FORMAT, 2, 2048) == -1 )
-	{
-		print_log(log_level::critical, "Failed to init SDL2 Mixer.\n");
-		return 0;
-	}
-
 	bool is_pressed = false, last_is_pressed = false;
 	signal (SIGINT, handle_quit_signal);
 
@@ -398,18 +371,6 @@ int main ()
 	{
 		print_log(log_level::info, "You have not chosen a mic in your config.\nDetected audio sources:\n");
 		quit_application = true;
-	}
-
-	Mix_Chunk* ptt_on_sample = nullptr;
-	Mix_Chunk* ptt_off_sample = nullptr;
-
-	ptt_on_sample = Mix_LoadWAV(PTT_ON_SOUND);
-	ptt_off_sample = Mix_LoadWAV(PTT_OFF_SOUND);
-
-	if (ptt_on_sample && ptt_off_sample)
-	{
-		Mix_VolumeChunk(ptt_on_sample, PTT_SOUND_VOLUME);
-		Mix_VolumeChunk(ptt_off_sample, PTT_SOUND_VOLUME);
 	}
 
 	auto main_loop = pw::main_loop::create();
@@ -471,30 +432,17 @@ int main ()
 		if(is_pressed && !last_is_pressed)
 		{
 			print_log(log_level::verbose, "Push to talk ON.\n");
-			if (ptt_on_sample)
-			{
-				Mix_PlayChannel(-1, ptt_on_sample, 0);
-			}
 			set_mute_all(devices, core, false);
 		}
 		else if (!is_pressed && last_is_pressed)
 		{
 			print_log(log_level::verbose, "Push to talk OFF.\n");
-			if (ptt_off_sample)
-			{
-				Mix_PlayChannel(-1, ptt_off_sample, 0);
-			}
 			set_mute_all(devices, core, true);
 		}
-		SDL_Delay(1);
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
 	}
 
 	print_log(log_level::verbose, "Turning microphone back ON before quitting.\n");
 	set_mute_all(devices, core, false);
-
-	Mix_FreeChunk(ptt_on_sample);
-	Mix_FreeChunk(ptt_off_sample);
-	Mix_CloseAudio();
-	SDL_Quit();
 	return 0;
 }

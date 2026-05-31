@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=0.2
+Name=Push to Talk
+Comment=Push-to-Talk Helper with Libinput, Pipewire, and SDL2
+Exec=/home/boctor/Developer/ptt/ptt
+Icon=audio-input-microphone
+Path=/home/boctor/Developer/ptt/
+Terminal=true
+Type=Application
+Categories=Utility;Application;
+StartupNotify=false
+Keywords=ptt;
