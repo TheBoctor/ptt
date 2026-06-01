@@ -31,38 +31,23 @@
 namespace pw = pipewire;
 namespace cfg = libconfig;
 
-enum class InputType {
-	MOUSE_ONLY,
-	KEYBOARD_ONLY,
-	MOUSE_AND_KEYBOARD
-};
-
-std::unordered_map<std::string, InputType> input_type_lookup =
-{
-	{ "MOUSE_ONLY", InputType::MOUSE_ONLY },
-	{ "MOUSE", InputType::MOUSE_ONLY },
-
-	{ "KEYBOARD_ONLY", InputType::KEYBOARD_ONLY },
-	{ "KEYBOARD", InputType::KEYBOARD_ONLY },
-
-	{ "KEYBOARD_AND_MOUSE", InputType::MOUSE_AND_KEYBOARD },
-	{ "MOUSE_AND_KEYBOARD", InputType::MOUSE_AND_KEYBOARD },
-	{ "BOTH", InputType::MOUSE_AND_KEYBOARD }
-};
-
-std::atomic<bool> thread_button_state = false,
-					quit_application = false,
-					thread_finished = false;
-
-
 constexpr bool VERBOSE_MODE = false;
-InputType DESIRED_EVENT_TYPE = InputType::MOUSE_AND_KEYBOARD;
-std::string DESIRED_MIC = "";
-KeySym PTT_KEY_SYM = NoSymbol;
+
+static constexpr size_t MOUSE_BUTTON_COUNT = 5;
+static constexpr int MOUSE_BUTTON_LOOKUP[MOUSE_BUTTON_COUNT] = { BTN_SIDE, BTN_EXTRA, BTN_FORWARD, BTN_BACK, BTN_TASK };
 
 static struct xkb_context *xkb_context;
 static struct xkb_keymap *keymap = NULL;
 static struct xkb_state *xkb_state = NULL;
+
+std::atomic<bool> thread_key_chord_pressed = false,
+					thread_mouse_pressed = false,
+					quit_application = false,
+					thread_finished = false;
+
+std::string desired_mic = "";
+std::unordered_map<KeySym, bool> ptt_key_chord;
+std::unordered_map<int, bool> ptt_mouse_state;
 
 enum log_level
 {
@@ -107,6 +92,31 @@ bool iequals(std::string_view lhs, std::string_view rhs)
 }
 
 
+void add_key_to_chord(const libconfig::Setting& key_str, std::unordered_map<KeySym, bool>& key_chord_state)
+{
+	if (key_str.isString())
+	{
+		if (const KeySym sym = XStringToKeysym(key_str.c_str()))
+		{
+			key_chord_state.emplace(sym, false);
+		}
+	}
+}
+
+
+void enable_mouse_button(const libconfig::Setting& mouse_button, std::unordered_map<int, bool>& mouse_button_state)
+{
+	if (mouse_button.isNumber())
+	{
+		const int button_idx = int(mouse_button) - 1;
+		if (button_idx >= 0 && button_idx < MOUSE_BUTTON_COUNT)
+		{
+			mouse_button_state.emplace(MOUSE_BUTTON_LOOKUP[button_idx], false);
+		}
+	}
+}
+
+
 bool load_config()
 {
 	// See ptt.conf.example for a list of parameters.
@@ -125,63 +135,47 @@ bool load_config()
 	}
 	catch (const cfg::ParseException &e)
 	{
-		print_log(log_level::warn, "Failure parsing config file \"%s\"\n", xdg_config_dir.c_str());
+		print_log(log_level::warn, "Failure parsing config file \"%s\", line %d: %s\n", xdg_config_dir.c_str(), e.getLine(), e.getError());
 		return false;
 	}
 
-	try
-	{
-		std::string mic = my_cfg.lookup("mic");
-		DESIRED_MIC = mic;
-	}
-	catch (const cfg::SettingNotFoundException &e)
-	{
-		print_log(log_level::warn, "Couldn't find \"mic\" setting in config file.");
-	}
+	// Desired mic name:
+	my_cfg.lookupValue("mic", desired_mic);
 
-	try
+	// Desired keyboard key(s):
+	if (my_cfg.exists("keyboard_keys"))
 	{
-		std::string listen_for_type = my_cfg.lookup("keyboard_or_mouse");
-
-		if ( auto find = input_type_lookup.find(listen_for_type); find != input_type_lookup.end() )
+		const libconfig::Setting& keyboard_keys = my_cfg.getRoot()["keyboard_keys"];
+		if (keyboard_keys.isArray())
 		{
-			DESIRED_EVENT_TYPE = find->second;
-			print_log(log_level::info, "Listening for events with filter: %s.\n", listen_for_type.c_str());
-		}
-	}
-	catch (const cfg::SettingNotFoundException &e)
-	{
-		print_log(log_level::verbose, "No filter specified for exclusive keyboard and/or mouse listening. Defaulting to \"BOTH\".\n");
-		print_log(log_level::info, "If you want to only listen for keyboard or mouse events individually, specify \"keyboard_or_mouse\" in ptt.conf. Valid settings include \"KEYBOARD_ONLY\", \"MOUSE_ONLY\", or \"BOTH\"\n");
-	}
-
-	try
-	{
-		std::string btn = my_cfg.lookup("key");
-		if (!btn.empty() && DESIRED_EVENT_TYPE != InputType::MOUSE_ONLY)
-		{
-			PTT_KEY_SYM = XStringToKeysym(btn.c_str());
-			if (PTT_KEY_SYM != NoSymbol)
+			for(size_t i = 0; i < keyboard_keys.getLength(); ++i)
 			{
-				std::string keyboard_help_msg = ".";
-				if (DESIRED_EVENT_TYPE == InputType::MOUSE_AND_KEYBOARD)
-				{
-					keyboard_help_msg = ", or hold your mouse's side button.";
-				}
-				print_log(log_level::info, "Hold the %s key to talk%s\n", btn.c_str(), keyboard_help_msg.c_str());
-			}
-			else
-			{
-				print_log(log_level::info, "Invalid keybind \"%s\" specified in config file.\nHold your mouse's side button to talk.\n", btn.c_str());
-				DESIRED_EVENT_TYPE = InputType::MOUSE_ONLY;
+				add_key_to_chord(keyboard_keys[i], ptt_key_chord);
 			}
 		}
+		else if (keyboard_keys.isString())
+		{
+			add_key_to_chord(keyboard_keys, ptt_key_chord);
+		}
 	}
-	catch (const cfg::SettingNotFoundException &e)
+
+	// Desired mouse button(s):
+	if (my_cfg.exists("mouse_buttons"))
 	{
-		DESIRED_EVENT_TYPE = InputType::MOUSE_ONLY;
-		print_log(log_level::info, "No \"key\" setting specified in ptt.conf. Hold your mouse's side button to talk.\n");
+		const libconfig::Setting& mouse_buttons = my_cfg.getRoot()["mouse_buttons"];
+		if (mouse_buttons.isArray())
+		{
+			for(size_t i = 0; i < mouse_buttons.getLength(); ++i)
+			{
+				enable_mouse_button(mouse_buttons[i], ptt_mouse_state);
+			}
+		}
+		else if (mouse_buttons.isString())
+		{
+			enable_mouse_button(mouse_buttons, ptt_mouse_state);
+		}
 	}
+
 	return true;
 }
 
@@ -190,7 +184,7 @@ static void process_event (struct libinput_event* event)
 {
 	int type = libinput_event_get_type (event);
 
-	if ( (DESIRED_EVENT_TYPE != InputType::MOUSE_ONLY) && (type == LIBINPUT_EVENT_KEYBOARD_KEY) )
+	if (type == LIBINPUT_EVENT_KEYBOARD_KEY)
 	{
 		struct libinput_event_keyboard *keyboard_event = libinput_event_get_keyboard_event (event);
 		uint32_t key = libinput_event_keyboard_get_key (keyboard_event);
@@ -198,23 +192,25 @@ static void process_event (struct libinput_event* event)
 		xkb_state_update_key (xkb_state, key+8, (xkb_key_direction)state);
 		KeySym sym = xkb_state_key_get_one_sym(xkb_state, key+8);
 
-		if (PTT_KEY_SYM == sym)
+		if (ptt_key_chord.find(sym) != ptt_key_chord.end())
 		{
-			thread_button_state = state;
+			ptt_key_chord[sym] = state;
 		}
+
+		thread_key_chord_pressed = std::all_of(ptt_key_chord.begin(), ptt_key_chord.end(), [](const auto& p) { return p.second; });
 	}
 
-	if ( (DESIRED_EVENT_TYPE != InputType::KEYBOARD_ONLY) && (type == LIBINPUT_EVENT_POINTER_BUTTON) )
+	else if (type == LIBINPUT_EVENT_POINTER_BUTTON)
 	{
 		struct libinput_event_pointer* pointer_event = libinput_event_get_pointer_event (event);
 		uint32_t which_button = libinput_event_pointer_get_button(pointer_event);
-		bool is_talk_button = (which_button == BTN_SIDE || which_button == BTN_EXTRA	// Side buttons on a normal mouse, which are the actual M4/M5 back and forward browser buttons.
-		|| which_button == BTN_FORWARD || which_button == BTN_BACK || which_button == BTN_TASK); // These actually correspond to the further mouse buttons on the Elecom HUGE and Deft Pro trackmice.
-		
-		if (is_talk_button)
+
+		if (ptt_mouse_state.find(which_button) != ptt_mouse_state.end())
 		{
-			thread_button_state = libinput_event_pointer_get_button_state(pointer_event);
+			ptt_mouse_state[which_button] = libinput_event_pointer_get_button_state(pointer_event);
 		}
+
+		thread_mouse_pressed = std::any_of(ptt_mouse_state.begin(), ptt_mouse_state.end(), [](const auto& p) { return p.second; });
 	}
 
 	libinput_event_destroy (event);
@@ -367,7 +363,7 @@ int main ()
 	signal (SIGINT, handle_quit_signal);
 
 	load_config();
-	if (DESIRED_MIC.empty())
+	if (desired_mic.empty())
 	{
 		print_log(log_level::info, "You have not chosen a mic in your config.\nDetected audio sources:\n");
 		quit_application = true;
@@ -401,8 +397,8 @@ int main ()
 		if (info.props.contains("device.description"))
 		{
 			std::string& desc = info.props.at("device.description");
-			print_log(log_level::info, "  %s %s\n", (desc == DESIRED_MIC ? "--> " : "    "), desc.c_str());
-			if (desc == DESIRED_MIC)
+			print_log(log_level::info, "  %s %s\n", (desc == desired_mic ? "--> " : "    "), desc.c_str());
+			if (desc == desired_mic)
 			{
 				devices.emplace_back(std::move(*device));
 			}
@@ -412,9 +408,9 @@ int main ()
 	listener.on<pipewire::registry_event::global>(on_global);
 	core->update();
 
-	if (!DESIRED_MIC.empty() && devices.empty())
+	if (!desired_mic.empty() && devices.empty())
 	{
-		print_log(log_level::critical, "Your desired mic, \"%s\", was not detected.\n", DESIRED_MIC.c_str());
+		print_log(log_level::critical, "Your desired mic, \"%s\", was not detected.\n", desired_mic.c_str());
 		quit_application = true;
 	}
 
@@ -427,9 +423,9 @@ int main ()
 	while (!thread_finished)
 	{
 		last_is_pressed = is_pressed;
-		is_pressed = thread_button_state.load();
+		is_pressed = thread_key_chord_pressed.load() || thread_mouse_pressed.load();
 
-		if(is_pressed && !last_is_pressed)
+		if (is_pressed && !last_is_pressed)
 		{
 			print_log(log_level::verbose, "Push to talk ON.\n");
 			set_mute_all(devices, core, false);

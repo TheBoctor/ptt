@@ -2,13 +2,10 @@
 // Audio mixers usually display these, but if unsure, the ptt application will show a list on startup.
 mic = "Blue Snowball";
 
-// A hotkey (refer to list of XKB names) which will toggle this mic on when pressed, and off when released.
-// Some favorites are included here. I personally recommend unbinding PrtSc on your compositor and using
-// that, if using a ThinkPad with the modern keyboard, since its bottom-row position feels comfortable.
-//key = "backslash";
-key = "Print";
+// A hotkey or chord (refer to list of XKB names) which will toggle this mic on when pressed, and off when released.
+// I personally recommend unbinding PrtSc on your compositor and using that, if using a ThinkPad with the modern keyboard.
+keyboard_keys = [ "Print", "K" ];
 
-// Valid settings here include KEYBOARD, MOUSE, and BOTH (default). If you have a side mouse button but do
-// not want it to toggle the mic, simply change this to KEYBOARD. If you have defined a key but have plugged
-// in a USB mouse at your workstation and would rather only use the mouse, conversely change this to MOUSE.
-keyboard_or_mouse="BOTH";
+// Which mouse buttons to enable for PTT. Not a chord, just integers from 1 to 5 corresponding to extra mouse buttons.
+// (Does not include left/right/middle mouse since that would be ridiculous.)
+mouse_buttons = [ 1, 2, 3, 4, 5 ];
