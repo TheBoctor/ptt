@@ -197,7 +197,7 @@ static void process_event (struct libinput_event* event)
 			ptt_key_chord[sym] = state;
 		}
 
-		thread_key_chord_pressed = std::all_of(ptt_key_chord.begin(), ptt_key_chord.end(), [](const auto& p) { return p.second; });
+		thread_key_chord_pressed = !ptt_key_chord.empty() && std::all_of(ptt_key_chord.begin(), ptt_key_chord.end(), [](const auto& p) { return p.second; });
 	}
 
 	else if (type == LIBINPUT_EVENT_POINTER_BUTTON)
